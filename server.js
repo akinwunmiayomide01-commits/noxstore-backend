@@ -2,34 +2,41 @@ const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
 
+const paystackRoutes = require("./routes/paystack");
+
 const app = express();
 
+/**
+ * =========================
+ * MIDDLEWARE
+ * =========================
+ */
 app.use(cors());
 app.use(express.json());
 
-// IMPORT ROUTES
-const paystackRoutes = require("./routes/paystack");
+/**
+ * =========================
+ * ROUTES
+ * =========================
+ */
 app.use("/api/paystack", paystackRoutes);
 
 /**
- * TEST DB ROUTE (ADD HERE)
+ * =========================
+ * HEALTH CHECK (IMPORTANT FOR RENDER)
+ * =========================
  */
-app.get("/test-db", async (req, res) => {
-  const supabase = require("./config/supabase");
-
-  const { data, error } = await supabase.from("orders").select("*");
-
-  if (error) return res.json({ error: error.message });
-
-  res.json(data);
-});
-
 app.get("/", (req, res) => {
   res.send("NOXSTORE API RUNNING");
 });
 
+/**
+ * =========================
+ * SERVER START (FIXED FOR RENDER)
+ * =========================
+ */
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
-  console.log("Server running on port", PORT);
+  console.log(`🚀 Server running on port ${PORT}`);
 });
