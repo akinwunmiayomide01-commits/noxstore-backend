@@ -13,10 +13,12 @@ router.post("/initialize", async (req, res) => {
   try {
     const { email, amount, orderId, playerId, gameId } = req.body;
 
-    console.log("📩 INIT REQUEST:", req.body);
+    if (!email || !amount || !orderId) {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
 
-    // Save order in DB (pending)
-    const { data, error } = await supabase.from("orders").insert([
+    // 1. Save order to DB
+    const { error: dbError } = await supabase.from("orders").insert([
       {
         order_id: orderId,
         player_id: playerId,
@@ -26,21 +28,20 @@ router.post("/initialize", async (req, res) => {
       },
     ]);
 
-    if (error) {
-      console.log("❌ DB INSERT ERROR:", error.message);
-      return res.status(500).json({ error: error.message });
+    if (dbError) {
+      console.log("DB ERROR:", dbError.message);
+      return res.status(500).json({ error: "Database insert failed" });
     }
 
-    console.log("✅ ORDER SAVED");
-
-    // Initialize Paystack payment
+    // 2. Initialize Paystack
     const response = await axios.post(
       "https://api.paystack.co/transaction/initialize",
       {
         email,
         amount: amount * 100,
         reference: orderId,
-        callback_url: "http://localhost:5173/payment-success",
+        callback_url:
+          "https://your-vercel-app.vercel.app/payment-success", // ⚠️ CHANGE THIS
       },
       {
         headers: {
@@ -52,49 +53,14 @@ router.post("/initialize", async (req, res) => {
 
     return res.json(response.data.data);
   } catch (err) {
-    console.log("❌ INIT ERROR:", err.message);
+    console.log("INIT ERROR:", err.response?.data || err.message);
     return res.status(500).json({ error: "Payment init failed" });
   }
 });
 
 /**
  * =========================
- * AUTO TOP-UP FUNCTION
- * =========================
- */
-async function processTopUp(order) {
-  try {
-    console.log("🚀 TOP-UP START:", order.order_id);
-
-    // Step 1: mark processing
-    await supabase
-      .from("orders")
-      .update({ status: "processing" })
-      .eq("order_id", order.order_id);
-
-    // Step 2: SIMULATED DELIVERY (replace later with real API)
-    await new Promise((resolve) => setTimeout(resolve, 3000));
-
-    // Step 3: complete order
-    await supabase
-      .from("orders")
-      .update({ status: "completed" })
-      .eq("order_id", order.order_id);
-
-    console.log("🎮 TOP-UP COMPLETED");
-  } catch (err) {
-    console.log("❌ TOP-UP ERROR:", err.message);
-
-    await supabase
-      .from("orders")
-      .update({ status: "failed" })
-      .eq("order_id", order.order_id);
-  }
-}
-
-/**
- * =========================
- * VERIFY PAYMENT + TRIGGER TOP-UP
+ * VERIFY PAYMENT
  * =========================
  */
 router.get("/verify/:reference", async (req, res) => {
@@ -110,62 +76,37 @@ router.get("/verify/:reference", async (req, res) => {
       }
     );
 
-    const payment = response.data.data;
+    const data = response.data.data;
 
-    console.log("🔍 PAYMENT STATUS:", payment.status);
+    if (data.status === "success") {
+      // 1. Update DB to paid
+      await supabase
+        .from("orders")
+        .update({ status: "paid" })
+        .eq("order_id", reference);
 
-    // Update order status
-    const { data: order, error } = await supabase
-      .from("orders")
-      .update({
-        status: payment.status === "success" ? "success" : "failed",
-      })
-      .eq("order_id", reference)
-      .select()
-      .single();
+      // 2. (NEXT STEP) Trigger top-up API here
+      console.log("Payment successful for:", reference);
 
-    if (error) {
-      console.log("❌ DB ERROR:", error.message);
-      return res.status(500).json({ error: error.message });
+      return res.json({
+        success: true,
+        message: "Payment verified",
+        data,
+      });
+    } else {
+      await supabase
+        .from("orders")
+        .update({ status: "failed" })
+        .eq("order_id", reference);
+
+      return res.json({
+        success: false,
+        message: "Payment failed",
+      });
     }
-
-    console.log("✅ ORDER UPDATED");
-
-    // AUTO TOP-UP TRIGGER (non-blocking)
-    if (payment.status === "success") {
-      processTopUp(order);
-    }
-
-    return res.json({
-      status: payment.status,
-      reference,
-    });
   } catch (err) {
-    console.log("❌ VERIFY ERROR:", err.message);
+    console.log("VERIFY ERROR:", err.response?.data || err.message);
     return res.status(500).json({ error: "Verification failed" });
-  }
-});
-
-/**
- * =========================
- * GET ALL ORDERS (ADMIN)
- * =========================
- */
-router.get("/orders", async (req, res) => {
-  try {
-    const { data, error } = await supabase
-      .from("orders")
-      .select("*")
-      .order("created_at", { ascending: false });
-
-    if (error) {
-      return res.status(500).json({ error: error.message });
-    }
-
-    return res.json(data);
-  } catch (err) {
-    console.log("❌ ORDERS ERROR:", err.message);
-    return res.status(500).json({ error: "Failed to fetch orders" });
   }
 });
 
