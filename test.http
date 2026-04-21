@@ -1,0 +1,7 @@
+POST http://localhost:3000/api/create-payment
+Content-Type: application/json
+
+{
+  "email": "test@gmail.com",
+  "amount": 100
+}
