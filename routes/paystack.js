@@ -94,7 +94,13 @@ router.get("/verify/:reference", async (req, res) => {
       .from("transactions")
       .update({ status: "paid" })
       .eq("reference", reference);
+await supabase
+  .from("transactions")
+  .update({ status: "processing" })
+  .eq("reference", reference);
 
+// 🔥 trigger top-up logic (temporary placeholder)
+console.log("TRIGGER TOPUP FOR:", reference);
     return res.json({
       success: true,
       data: data.data,
