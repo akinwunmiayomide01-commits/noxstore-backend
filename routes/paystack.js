@@ -44,7 +44,7 @@ router.post("/initialize", async (req, res) => {
 
     const reference = data.data.reference;
 
-    // ✅ SAVE ORDER (PENDING)
+    // Save order
     await supabase.from("orders").insert([
       {
         email,
@@ -60,6 +60,7 @@ router.post("/initialize", async (req, res) => {
       authorization_url: data.data.authorization_url,
       reference,
     });
+
   } catch (error) {
     console.error("INIT ERROR:", error);
     return res.status(500).json({ error: "Payment initialization failed" });
@@ -68,7 +69,7 @@ router.post("/initialize", async (req, res) => {
 
 /**
  * =========================
- * VERIFY PAYMENT
+ * VERIFY PAYMENT (FIXED)
  * =========================
  */
 router.get("/verify/:reference", async (req, res) => {
@@ -87,6 +88,9 @@ router.get("/verify/:reference", async (req, res) => {
 
     const data = await response.json();
 
+    console.log("VERIFY RESPONSE:", data);
+
+    // ❌ PAYMENT FAILED
     if (!data.status || data.data.status !== "success") {
       await supabase
         .from("orders")
@@ -96,27 +100,41 @@ router.get("/verify/:reference", async (req, res) => {
       return res.json({ success: false });
     }
 
-    // ✅ MARK AS PAID AND GET ORDER
-    const { data: order, error } = await supabase
+    // ✅ GET ORDER SAFELY
+    const { data: order, error: fetchError } = await supabase
+      .from("orders")
+      .select("*")
+      .eq("reference", reference)
+      .maybeSingle();
+
+    if (fetchError || !order) {
+      console.error("ORDER NOT FOUND:", fetchError);
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+    }
+
+    // ✅ MARK AS PAID
+    const { error: updateError } = await supabase
       .from("orders")
       .update({ status: "paid" })
-      .eq("reference", reference)
-      .select()
-      .single();
+      .eq("reference", reference);
 
-    if (error || !order) {
-      console.error("DB ERROR:", error);
+    if (updateError) {
+      console.error("UPDATE ERROR:", updateError);
       return res.status(500).json({ success: false });
     }
 
-    // 🚀 AUTO TOP-UP (DIRECT, NO QUEUE)
+    // 🚀 AUTO TOP-UP
     await processTopUp(order);
 
     return res.json({
       success: true,
-      message: "Payment verified and top-up processing started",
+      message: "Payment verified and processed",
       data: data.data,
     });
+
   } catch (error) {
     console.error("VERIFY ERROR:", error);
     return res.status(500).json({ success: false });
