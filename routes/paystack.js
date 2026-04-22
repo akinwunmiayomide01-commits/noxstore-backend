@@ -1,5 +1,4 @@
 const express = require("express");
-const fetch = require("node-fetch");
 
 const router = express.Router();
 
@@ -25,7 +24,7 @@ router.post("/initialize", async (req, res) => {
       },
       body: JSON.stringify({
         email,
-        amount: amount * 100,
+        amount: amount * 100, // convert to kobo
         callback_url: `${FRONTEND_URL}/payment-success`,
       }),
     });
@@ -68,6 +67,10 @@ router.get("/verify/:reference", async (req, res) => {
     if (!data.status || data.data.status !== "success") {
       return res.json({ success: false });
     }
+
+    // 🔥 OPTIONAL: UPDATE DATABASE HERE
+    // Example:
+    // await supabase.from("transactions").update({ status: "paid" }).eq("reference", reference);
 
     return res.json({
       success: true,
