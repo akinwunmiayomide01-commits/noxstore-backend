@@ -1,4 +1,5 @@
 const express = require("express");
+const supabase = require("../config/supabase");
 
 const router = express.Router();
 
@@ -16,18 +17,21 @@ router.post("/initialize", async (req, res) => {
       return res.status(400).json({ error: "Missing email or amount" });
     }
 
-    const response = await fetch("https://api.paystack.co/transaction/initialize", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${PAYSTACK_SECRET}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        email,
-        amount: amount * 100, // convert to kobo
-        callback_url: `${FRONTEND_URL}/payment-success`,
-      }),
-    });
+    const response = await fetch(
+      "https://api.paystack.co/transaction/initialize",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${PAYSTACK_SECRET}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email,
+          amount: amount * 100,
+          callback_url: `${FRONTEND_URL}/payment-success`,
+        }),
+      }
+    );
 
     const data = await response.json();
 
@@ -35,9 +39,21 @@ router.post("/initialize", async (req, res) => {
       return res.status(400).json({ error: data.message });
     }
 
+    const reference = data.data.reference;
+
+    // 🔥 SAVE TRANSACTION (PENDING)
+    await supabase.from("transactions").insert([
+      {
+        email,
+        amount,
+        reference,
+        status: "pending",
+      },
+    ]);
+
     return res.json({
       authorization_url: data.data.authorization_url,
-      reference: data.data.reference,
+      reference,
     });
   } catch (error) {
     console.error("INIT ERROR:", error);
@@ -65,12 +81,19 @@ router.get("/verify/:reference", async (req, res) => {
     const data = await response.json();
 
     if (!data.status || data.data.status !== "success") {
+      await supabase
+        .from("transactions")
+        .update({ status: "failed" })
+        .eq("reference", reference);
+
       return res.json({ success: false });
     }
 
-    // 🔥 OPTIONAL: UPDATE DATABASE HERE
-    // Example:
-    // await supabase.from("transactions").update({ status: "paid" }).eq("reference", reference);
+    // 🔥 UPDATE STATUS TO PAID
+    await supabase
+      .from("transactions")
+      .update({ status: "paid" })
+      .eq("reference", reference);
 
     return res.json({
       success: true,
