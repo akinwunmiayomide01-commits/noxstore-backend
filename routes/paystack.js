@@ -1,11 +1,9 @@
-import express from "express";
-import fetch from "node-fetch";
+const express = require("express");
+const fetch = require("node-fetch");
 
 const router = express.Router();
 
 const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
-
-// 🔥 FRONTEND LIVE URL (IMPORTANT)
 const FRONTEND_URL = "https://noxstore-frontend.vercel.app";
 
 /**
@@ -27,7 +25,7 @@ router.post("/initialize", async (req, res) => {
       },
       body: JSON.stringify({
         email,
-        amount: amount * 100, // Paystack uses kobo
+        amount: amount * 100,
         callback_url: `${FRONTEND_URL}/payment-success`,
       }),
     });
@@ -71,10 +69,6 @@ router.get("/verify/:reference", async (req, res) => {
       return res.json({ success: false });
     }
 
-    // 🔥 OPTIONAL: UPDATE DATABASE HERE
-    // Example:
-    // await supabase.from("transactions").update({ status: "paid" }).eq("reference", reference);
-
     return res.json({
       success: true,
       data: data.data,
@@ -85,4 +79,4 @@ router.get("/verify/:reference", async (req, res) => {
   }
 });
 
-export default router;
+module.exports = router;
