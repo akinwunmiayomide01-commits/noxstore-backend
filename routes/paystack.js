@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 
 const supabase = require("../config/supabase");
-const topupQueue = require("../services/queue/topupQueue");
+const { processTopUp } = require("../services/topupService");
 
 const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
 const FRONTEND_URL = "https://noxstore-frontend.vercel.app";
@@ -44,7 +44,7 @@ router.post("/initialize", async (req, res) => {
 
     const reference = data.data.reference;
 
-    // 🔥 SAVE ORDER (PENDING)
+    // ✅ SAVE ORDER (PENDING)
     await supabase.from("orders").insert([
       {
         email,
@@ -60,15 +60,15 @@ router.post("/initialize", async (req, res) => {
       authorization_url: data.data.authorization_url,
       reference,
     });
-  } catch (err) {
-    console.error("INIT ERROR:", err);
-    res.status(500).json({ error: "Payment initialization failed" });
+  } catch (error) {
+    console.error("INIT ERROR:", error);
+    return res.status(500).json({ error: "Payment initialization failed" });
   }
 });
 
 /**
  * =========================
- * VERIFY PAYMENT + QUEUE TOPUP
+ * VERIFY PAYMENT
  * =========================
  */
 router.get("/verify/:reference", async (req, res) => {
@@ -87,20 +87,16 @@ router.get("/verify/:reference", async (req, res) => {
 
     const data = await response.json();
 
-    // ❌ PAYMENT FAILED
     if (!data.status || data.data.status !== "success") {
       await supabase
         .from("orders")
         .update({ status: "failed" })
         .eq("reference", reference);
 
-      return res.json({
-        success: false,
-        message: "Payment failed",
-      });
+      return res.json({ success: false });
     }
 
-    // ✅ UPDATE ORDER TO PAID
+    // ✅ MARK AS PAID AND GET ORDER
     const { data: order, error } = await supabase
       .from("orders")
       .update({ status: "paid" })
@@ -108,33 +104,22 @@ router.get("/verify/:reference", async (req, res) => {
       .select()
       .single();
 
-    if (error) {
-      return res.status(500).json({
-        success: false,
-        message: "Database update failed",
-      });
+    if (error || !order) {
+      console.error("DB ERROR:", error);
+      return res.status(500).json({ success: false });
     }
 
-    // 🚀 ADD TO QUEUE (WITH RETRY SYSTEM)
-    await topupQueue.add("topup", order, {
-      attempts: 5,
-      backoff: {
-        type: "exponential",
-        delay: 5000,
-      },
-    });
+    // 🚀 AUTO TOP-UP (DIRECT, NO QUEUE)
+    await processTopUp(order);
 
     return res.json({
       success: true,
-      message: "Payment verified and top-up queued",
+      message: "Payment verified and top-up processing started",
       data: data.data,
     });
-  } catch (err) {
-    console.error("VERIFY ERROR:", err);
-    res.status(500).json({
-      success: false,
-      message: "Server error during verification",
-    });
+  } catch (error) {
+    console.error("VERIFY ERROR:", error);
+    return res.status(500).json({ success: false });
   }
 });
 
