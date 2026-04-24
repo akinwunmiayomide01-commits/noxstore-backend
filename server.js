@@ -27,24 +27,27 @@ app.use("/api/paystack", paystackRoutes);
  * =========================
  */
 app.get("/", (req, res) => {
-  res.status(200).send("NOXSTORE API RUNNING 🚀");
-});
-
-/**
- * =========================
- * ERROR HANDLER (IMPORTANT)
- * =========================
- */
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({
-    message: "Internal Server Error",
+  res.status(200).json({
+    message: "NOXSTORE API RUNNING 🚀",
   });
 });
 
 /**
  * =========================
- * SERVER START
+ * GLOBAL ERROR HANDLER
+ * =========================
+ */
+app.use((err, req, res, next) => {
+  console.error("🔥 GLOBAL ERROR:", err);
+  res.status(500).json({
+    success: false,
+    message: "Server error",
+  });
+});
+
+/**
+ * =========================
+ * START SERVER
  * =========================
  */
 const PORT = process.env.PORT || 5000;
