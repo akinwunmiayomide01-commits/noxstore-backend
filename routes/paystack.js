@@ -2,9 +2,7 @@ const express = require("express");
 const router = express.Router();
 
 const supabase = require("../config/supabase");
-
-const fetch = (...args) =>
-  import("node-fetch").then(({ default: fetch }) => fetch(...args));
+const fetch = require("node-fetch");
 
 const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
 const FRONTEND_URL =
@@ -46,31 +44,26 @@ router.post("/initialize", async (req, res) => {
       });
     }
 
-    // PAYSTACK CALL
-    let paystackRes;
-    try {
-      paystackRes = await fetch(
-        "https://api.paystack.co/transaction/initialize",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${PAYSTACK_SECRET}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            email,
-            amount: Number(amount) * 100,
-            callback_url: `${FRONTEND_URL}/payment-success`,
-          }),
-        }
-      );
-    } catch (err) {
-      console.log("🔥 PAYSTACK NETWORK ERROR:", err);
-      return res.status(500).json({
-        success: false,
-        message: "Paystack request failed",
-      });
-    }
+    /**
+     * =========================
+     * PAYSTACK REQUEST
+     * =========================
+     */
+    const paystackRes = await fetch(
+      "https://api.paystack.co/transaction/initialize",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${PAYSTACK_SECRET}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email,
+          amount: Number(amount) * 100,
+          callback_url: `${FRONTEND_URL}/payment-success`,
+        }),
+      }
+    );
 
     const data = await paystackRes.json();
     console.log("📦 PAYSTACK RESPONSE:", data);
@@ -84,7 +77,11 @@ router.post("/initialize", async (req, res) => {
 
     const reference = data.data.reference;
 
-    // SUPABASE INSERT
+    /**
+     * =========================
+     * SUPABASE INSERT
+     * =========================
+     */
     const { error } = await supabase.from("orders").insert([
       {
         email,
@@ -96,16 +93,22 @@ router.post("/initialize", async (req, res) => {
       },
     ]);
 
+    // 🔴 FULL DEBUG ERROR (THIS IS WHAT YOU NEEDED)
     if (error) {
-      console.log("❌ SUPABASE ERROR:", error);
+      console.log("❌ SUPABASE FULL ERROR:", JSON.stringify(error, null, 2));
 
       return res.status(500).json({
         success: false,
         message: "Database insert failed",
-        error,
+        error: error.message || error,
       });
     }
 
+    /**
+     * =========================
+     * SUCCESS RESPONSE
+     * =========================
+     */
     return res.status(200).json({
       success: true,
       authorization_url: data.data.authorization_url,
