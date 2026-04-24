@@ -1,8 +1,8 @@
 const express = require("express");
 const router = express.Router();
+const axios = require("axios");
 
 const supabase = require("../config/supabase");
-const fetch = require("node-fetch");
 
 const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
 const FRONTEND_URL =
@@ -10,7 +10,7 @@ const FRONTEND_URL =
 
 /**
  * =========================
- * TEST ROUTE
+ * HEALTH CHECK
  * =========================
  */
 router.get("/", (req, res) => {
@@ -24,11 +24,10 @@ router.get("/", (req, res) => {
  */
 router.post("/initialize", async (req, res) => {
   try {
-    console.log("🔥 INIT REQUEST:", req.body);
-
     const { email, amount, player_id, game_id } = req.body;
 
-    // VALIDATION
+    console.log("🔥 INIT REQUEST:", req.body);
+
     if (!email || !amount) {
       return res.status(400).json({
         success: false,
@@ -37,53 +36,42 @@ router.post("/initialize", async (req, res) => {
     }
 
     if (!PAYSTACK_SECRET) {
-      console.log("❌ Missing Paystack key");
       return res.status(500).json({
         success: false,
-        message: "Server misconfiguration",
+        message: "Missing Paystack secret key",
       });
     }
 
-    /**
-     * =========================
-     * PAYSTACK REQUEST
-     * =========================
-     */
-const axios = require("axios");
+    // 🔥 PAYSTACK INIT
+    const paystackRes = await axios.post(
+      "https://api.paystack.co/transaction/initialize",
+      {
+        email,
+        amount: Number(amount) * 100,
+        callback_url: `${FRONTEND_URL}/payment-success`,
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${PAYSTACK_SECRET}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
 
-const paystackRes = await axios.post(
-  "https://api.paystack.co/transaction/initialize",
-  {
-    email,
-    amount: Number(amount) * 100,
-    callback_url: `${FRONTEND_URL}/payment-success`,
-  },
-  {
-    headers: {
-      Authorization: `Bearer ${PAYSTACK_SECRET}`,
-      "Content-Type": "application/json",
-    },
-  }
-);
-
-const data = paystackRes.data;
+    const data = paystackRes.data;
 
     console.log("📦 PAYSTACK RESPONSE:", data);
 
     if (!data.status) {
       return res.status(400).json({
         success: false,
-        message: data.message || "Paystack error",
+        message: "Paystack initialization failed",
       });
     }
 
     const reference = data.data.reference;
 
-    /**
-     * =========================
-     * SUPABASE INSERT
-     * =========================
-     */
+    // 🔥 SAVE ORDER
     const { error } = await supabase.from("orders").insert([
       {
         email,
@@ -95,33 +83,73 @@ const data = paystackRes.data;
       },
     ]);
 
-    // 🔴 FULL DEBUG ERROR (THIS IS WHAT YOU NEEDED)
     if (error) {
-      console.log("❌ SUPABASE FULL ERROR:", JSON.stringify(error, null, 2));
+      console.log("❌ SUPABASE ERROR:", error);
 
       return res.status(500).json({
         success: false,
         message: "Database insert failed",
-        error: error.message || error,
+        error: error.message,
       });
     }
 
-    /**
-     * =========================
-     * SUCCESS RESPONSE
-     * =========================
-     */
-    return res.status(200).json({
+    return res.json({
       success: true,
       authorization_url: data.data.authorization_url,
       reference,
     });
   } catch (err) {
-    console.error("🔥 INIT CRASH:", err);
+    console.error("🔥 INIT ERROR:", err.message);
 
     return res.status(500).json({
       success: false,
-      message: "Unexpected server error",
+      message: "Initialize error",
+      error: err.message,
+    });
+  }
+});
+
+/**
+ * =========================
+ * VERIFY PAYMENT
+ * =========================
+ */
+router.get("/verify/:reference", async (req, res) => {
+  try {
+    const { reference } = req.params;
+
+    console.log("🔍 VERIFYING:", reference);
+
+    const response = await axios.get(
+      `https://api.paystack.co/transaction/verify/${reference}`,
+      {
+        headers: {
+          Authorization: `Bearer ${PAYSTACK_SECRET}`,
+        },
+      }
+    );
+
+    const data = response.data;
+
+    console.log("📦 VERIFY RESPONSE:", data);
+
+    if (!data.status) {
+      return res.status(400).json({
+        success: false,
+        message: "Verification failed",
+      });
+    }
+
+    return res.json({
+      success: true,
+      data: data.data,
+    });
+  } catch (err) {
+    console.error("❌ VERIFY ERROR:", err.message);
+
+    return res.status(500).json({
+      success: false,
+      message: "Verification error",
       error: err.message,
     });
   }
