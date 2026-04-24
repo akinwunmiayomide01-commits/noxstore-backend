@@ -1,21 +1,9 @@
 const express = require("express");
 const router = express.Router();
-const axios = require("axios");
 
 const supabase = require("../config/supabase");
 
 const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
-const FRONTEND_URL =
-  process.env.FRONTEND_URL || "https://noxstore-frontend.vercel.app";
-
-/**
- * =========================
- * HEALTH CHECK
- * =========================
- */
-router.get("/", (req, res) => {
-  res.json({ message: "Paystack route working ✅" });
-});
 
 /**
  * =========================
@@ -24,9 +12,7 @@ router.get("/", (req, res) => {
  */
 router.post("/initialize", async (req, res) => {
   try {
-    const { email, amount, player_id, game_id } = req.body;
-
-    console.log("🔥 INIT REQUEST:", req.body);
+    const { email, amount } = req.body;
 
     if (!email || !amount) {
       return res.status(400).json({
@@ -35,103 +21,84 @@ router.post("/initialize", async (req, res) => {
       });
     }
 
-    if (!PAYSTACK_SECRET) {
-      return res.status(500).json({
-        success: false,
-        message: "Missing Paystack secret key",
-      });
-    }
-
-    // 🔥 PAYSTACK INIT
-    const paystackRes = await axios.post(
+    const response = await fetch(
       "https://api.paystack.co/transaction/initialize",
       {
-        email,
-        amount: Number(amount) * 100,
-        callback_url: `${FRONTEND_URL}/payment-success`,
-      },
-      {
+        method: "POST",
         headers: {
           Authorization: `Bearer ${PAYSTACK_SECRET}`,
           "Content-Type": "application/json",
         },
+        body: JSON.stringify({
+          email,
+          amount: amount * 100,
+        }),
       }
     );
 
-    const data = paystackRes.data;
-
-    console.log("📦 PAYSTACK RESPONSE:", data);
+    const data = await response.json();
 
     if (!data.status) {
       return res.status(400).json({
         success: false,
-        message: "Paystack initialization failed",
+        message: "Paystack init failed",
       });
     }
 
     const reference = data.data.reference;
 
-    // 🔥 SAVE ORDER
-    const { error } = await supabase.from("orders").insert([
+    // Save order
+    await supabase.from("orders").insert([
       {
         email,
         amount,
         reference,
-        player_id: player_id || null,
-        game_id: game_id || null,
         status: "pending",
       },
     ]);
-
-    if (error) {
-      console.log("❌ SUPABASE ERROR:", error);
-
-      return res.status(500).json({
-        success: false,
-        message: "Database insert failed",
-        error: error.message,
-      });
-    }
 
     return res.json({
       success: true,
       authorization_url: data.data.authorization_url,
       reference,
     });
-  } catch (err) {
-    console.error("🔥 INIT ERROR:", err.message);
 
+  } catch (err) {
+    console.error("INIT ERROR:", err);
     return res.status(500).json({
       success: false,
-      message: "Initialize error",
-      error: err.message,
+      message: "Init failed",
     });
   }
 });
 
 /**
  * =========================
- * VERIFY PAYMENT
+ * VERIFY PAYMENT (CRITICAL)
  * =========================
  */
 router.get("/verify/:reference", async (req, res) => {
   try {
     const { reference } = req.params;
 
-    console.log("🔍 VERIFYING:", reference);
+    if (!reference) {
+      return res.status(400).json({
+        success: false,
+        message: "Reference required",
+      });
+    }
 
-    const response = await axios.get(
+    const response = await fetch(
       `https://api.paystack.co/transaction/verify/${reference}`,
       {
+        method: "GET",
         headers: {
           Authorization: `Bearer ${PAYSTACK_SECRET}`,
         },
       }
     );
 
-    const data = response.data;
-
-    console.log("📦 VERIFY RESPONSE:", data);
+    const data = await response.json();
 
     if (!data.status) {
       return res.status(400).json({
@@ -140,17 +107,37 @@ router.get("/verify/:reference", async (req, res) => {
       });
     }
 
-    return res.json({
-      success: true,
-      data: data.data,
-    });
-  } catch (err) {
-    console.error("❌ VERIFY ERROR:", err.message);
+    const payment = data.data;
 
+    if (payment.status === "success") {
+      // ✅ Update DB
+      await supabase
+        .from("orders")
+        .update({ status: "success" })
+        .eq("reference", reference);
+
+      return res.json({
+        success: true,
+        message: "Payment verified",
+        data: payment,
+      });
+    } else {
+      await supabase
+        .from("orders")
+        .update({ status: "failed" })
+        .eq("reference", reference);
+
+      return res.json({
+        success: false,
+        message: "Payment not successful",
+      });
+    }
+
+  } catch (err) {
+    console.error("VERIFY ERROR:", err);
     return res.status(500).json({
       success: false,
       message: "Verification error",
-      error: err.message,
     });
   }
 });
