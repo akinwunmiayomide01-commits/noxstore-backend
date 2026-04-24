@@ -49,21 +49,24 @@ router.post("/initialize", async (req, res) => {
      * PAYSTACK REQUEST
      * =========================
      */
-    const paystackRes = await fetch(
-      "https://api.paystack.co/transaction/initialize",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${PAYSTACK_SECRET}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          email,
-          amount: Number(amount) * 100,
-          callback_url: `${FRONTEND_URL}/payment-success`,
-        }),
-      }
-    );
+const axios = require("axios");
+
+const paystackRes = await axios.post(
+  "https://api.paystack.co/transaction/initialize",
+  {
+    email,
+    amount: Number(amount) * 100,
+    callback_url: `${FRONTEND_URL}/payment-success`,
+  },
+  {
+    headers: {
+      Authorization: `Bearer ${PAYSTACK_SECRET}`,
+      "Content-Type": "application/json",
+    },
+  }
+);
+
+const data = paystackRes.data;
 
     const data = await paystackRes.json();
     console.log("📦 PAYSTACK RESPONSE:", data);
