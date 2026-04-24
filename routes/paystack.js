@@ -68,7 +68,6 @@ const paystackRes = await axios.post(
 
 const data = paystackRes.data;
 
-    const data = await paystackRes.json();
     console.log("📦 PAYSTACK RESPONSE:", data);
 
     if (!data.status) {
