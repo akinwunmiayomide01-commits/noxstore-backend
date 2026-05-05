@@ -2,10 +2,6 @@ const express = require("express");
 const cors = require("cors");
 require("dotenv").config();
 
-const supabase = require("./config/supabase");
-
-const paystackRoutes = require("./routes/paystack");
-
 const app = express();
 
 /**
@@ -21,43 +17,15 @@ app.use(express.json());
  * ROUTES
  * =========================
  */
-app.use("/api/paystack", paystackRoutes);
 
-/**
- * =========================
- * ADMIN - GET ALL ORDERS
- * =========================
- */
-app.get("/api/admin/orders", async (req, res) => {
-  try {
-    const { data, error } = await supabase
-      .from("orders")
-      .select("*")
-      .order("created_at", { ascending: false });
+// Paystack (payments)
+app.use("/api/paystack", require("./routes/paystack"));
 
-    if (error) {
-      console.error("ADMIN FETCH ERROR:", error);
-      return res.status(500).json({
-        success: false,
-        message: "Failed to fetch orders",
-        error,
-      });
-    }
+// Orders (you should already have this)
+app.use("/api/orders", require("./routes/orders"));
 
-    return res.json({
-      success: true,
-      orders: data,
-    });
-  } catch (err) {
-    console.error("ADMIN ROUTE CRASH:", err);
-
-    return res.status(500).json({
-      success: false,
-      message: "Server error",
-      error: err.message,
-    });
-  }
-});
+// Admin authentication (NEW)
+app.use("/api/admin", require("./routes/adminAuth"));
 
 /**
  * =========================
@@ -65,16 +33,16 @@ app.get("/api/admin/orders", async (req, res) => {
  * =========================
  */
 app.get("/", (req, res) => {
-  res.send("🚀 NOXSTORE API RUNNING");
+  res.send("Noxstore backend running 🚀");
 });
 
 /**
  * =========================
- * SERVER START
+ * SERVER
  * =========================
  */
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });
