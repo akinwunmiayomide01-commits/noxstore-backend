@@ -11,6 +11,7 @@ const app = express();
  */
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 /**
  * =========================
@@ -18,13 +19,10 @@ app.use(express.json());
  * =========================
  */
 
-// Paystack (payments)
-app.use("/api/paystack", require("./routes/paystack"));
-
-// Orders (you should already have this)
+// Orders routes (IMPORTANT)
 app.use("/api/orders", require("./routes/orders"));
 
-// Admin authentication (NEW)
+// Admin auth routes
 app.use("/api/admin", require("./routes/adminAuth"));
 
 /**
@@ -38,7 +36,7 @@ app.get("/", (req, res) => {
 
 /**
  * =========================
- * SERVER
+ * START SERVER
  * =========================
  */
 const PORT = process.env.PORT || 5000;

@@ -1,11 +1,10 @@
 const express = require("express");
 const router = express.Router();
-
 const supabase = require("../config/supabase");
 
 /**
  * =========================
- * GET ALL ORDERS (ADMIN)
+ * GET ALL ORDERS
  * =========================
  */
 router.get("/", async (req, res) => {
@@ -16,13 +15,13 @@ router.get("/", async (req, res) => {
       .order("created_at", { ascending: false });
 
     if (error) {
-      throw error;
+      console.error("FETCH ERROR:", error);
+      return res.status(500).json({ success: false, error });
     }
 
     return res.json(data);
-
   } catch (err) {
-    console.error("FETCH ORDERS ERROR:", err);
+    console.error("GET ORDERS CRASH:", err);
 
     return res.status(500).json({
       success: false,
@@ -33,66 +32,37 @@ router.get("/", async (req, res) => {
 
 /**
  * =========================
- * GET SINGLE ORDER
- * =========================
- */
-router.get("/:reference", async (req, res) => {
-  try {
-    const { reference } = req.params;
-
-    const { data, error } = await supabase
-      .from("orders")
-      .select("*")
-      .eq("reference", reference)
-      .single();
-
-    if (error) {
-      throw error;
-    }
-
-    return res.json(data);
-
-  } catch (err) {
-    console.error("GET ORDER ERROR:", err);
-
-    return res.status(500).json({
-      success: false,
-      message: "Order not found",
-    });
-  }
-});
-
-/**
- * =========================
- * MARK ORDER AS FULFILLED
+ * FULFILL ORDER (FIXED)
  * =========================
  */
 router.post("/fulfill/:reference", async (req, res) => {
   try {
     const { reference } = req.params;
 
-    const { data: order, error: fetchError } = await supabase
+    if (!reference) {
+      return res.status(400).json({
+        success: false,
+        message: "Reference is required",
+      });
+    }
+
+    // check if order exists
+    const { data: order, error: findError } = await supabase
       .from("orders")
       .select("*")
       .eq("reference", reference)
       .single();
 
-    if (fetchError || !order) {
+    if (findError || !order) {
+      console.error("ORDER NOT FOUND:", findError);
+
       return res.status(404).json({
         success: false,
         message: "Order not found",
       });
     }
 
-    // Prevent double fulfillment
-    if (order.fulfillment_status === "completed") {
-      return res.json({
-        success: true,
-        message: "Order already fulfilled",
-      });
-    }
-
-    // Update order
+    // update fulfillment status
     const { error: updateError } = await supabase
       .from("orders")
       .update({
@@ -101,20 +71,26 @@ router.post("/fulfill/:reference", async (req, res) => {
       .eq("reference", reference);
 
     if (updateError) {
-      throw updateError;
+      console.error("UPDATE ERROR:", updateError);
+
+      return res.status(500).json({
+        success: false,
+        message: "Failed to update order",
+        error: updateError,
+      });
     }
 
     return res.json({
       success: true,
-      message: "Order marked as fulfilled",
+      message: "Order fulfilled successfully",
     });
 
   } catch (err) {
-    console.error("FULFILL ERROR:", err);
+    console.error("FULFILL CRASH:", err);
 
     return res.status(500).json({
       success: false,
-      message: "Failed to fulfill order",
+      message: "Internal server error",
     });
   }
 });
