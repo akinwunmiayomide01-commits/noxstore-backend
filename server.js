@@ -4,62 +4,51 @@ require("dotenv").config();
 
 const app = express();
 
-/**
- * =========================
- * MIDDLEWARE
- * =========================
- */
+/* ───────────────────────────────
+   1. CORS
+────────────────────────────── */
 app.use(cors());
+
+/* ───────────────────────────────
+   2. PAYSTACK WEBHOOK RAW BODY HANDLING
+   IMPORTANT: must come BEFORE express.json()
+────────────────────────────── */
+app.use("/api/payments/webhook", express.raw({ type: "application/json" }));
+
+/* ───────────────────────────────
+   3. NORMAL BODY PARSING
+────────────────────────────── */
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-/**
- * =========================
- * ROUTES
- * =========================
- */
-
-// AUTH ROUTES
-app.use("/api/auth", require("./routes/auth"));
-
-// PAYMENT ROUTES
-app.use("/api/payments", require("./routes/payments"));
-
-// ORDER ROUTES (optional history)
+/* ───────────────────────────────
+   4. ROUTES
+────────────────────────────── */
 app.use("/api/orders", require("./routes/orders"));
+app.use("/api/admin", require("./routes/adminAuth"));
+app.use("/api/payments", require("./routes/payments")); // includes initialize + webhook
 
-// WEBHOOK ROUTE (PAYSTACK)
-app.use("/api/webhook", require("./routes/webhook"));
-
-/**
- * =========================
- * HEALTH CHECK
- * =========================
- */
+/* ───────────────────────────────
+   5. HEALTH CHECK
+────────────────────────────── */
 app.get("/", (req, res) => {
-  res.json({
-    status: "Noxstore backend running 🚀",
-    version: "2.0-webhook-enabled"
-  });
+  res.send("Noxstore backend running 🚀");
 });
 
-/**
- * =========================
- * ERROR HANDLER (IMPORTANT)
- * =========================
- */
+/* ───────────────────────────────
+   6. ERROR HANDLING (IMPORTANT FOR DEBUGGING)
+────────────────────────────── */
 app.use((err, req, res, next) => {
   console.error("SERVER ERROR:", err);
   res.status(500).json({
-    message: "Internal server error"
+    message: "Internal server error",
+    error: err.message,
   });
 });
 
-/**
- * =========================
- * START SERVER
- * =========================
- */
+/* ───────────────────────────────
+   7. START SERVER
+────────────────────────────── */
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
