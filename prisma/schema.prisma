@@ -9,22 +9,25 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  createdAt DateTime @default(now())
+  id           String        @id @default(cuid())
+  email        String        @unique
+  password     String
+  createdAt    DateTime      @default(now())
 
   transactions Transaction[]
 }
 
 model Transaction {
-  id        String   @id @default(cuid())
-  reference String   @unique
-  email     String
-  amount    Int
-  game      String
-  status    String
-  userId    String?
-  createdAt DateTime @default(now())
+  id         String   @id @default(cuid())
+  reference  String   @unique
+  email      String
+  amount     Int
+  game       String
+  gameId     String
+  serverId   String?
+  status     String   @default("pending")
+  createdAt  DateTime @default(now())
 
-  user      User?    @relation(fields: [userId], references: [id])
+  userId      String?
+  user        User?   @relation(fields: [userId], references: [id])
 }

@@ -1,39 +1,43 @@
 const express = require("express");
 const axios = require("axios");
-const crypto = require("crypto");
+const { PrismaClient } = require("@prisma/client");
+const auth = require("../middleware/auth");
 
 const router = express.Router();
-
-/**
- * IMPORTANT:
- * Prisma client should be imported once in server OR here
- * Adjust path if yours differs
- */
-const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
 
-/* ─────────────────────────────────────────────
-   1. INITIALIZE PAYMENT (FRONTEND CALLS THIS)
-──────────────────────────────────────────── */
-router.post("/initialize", async (req, res) => {
+/* =========================
+   INIT PAYMENT
+========================= */
+router.post("/initialize", auth, async (req, res) => {
   try {
-    const { amount, game, email } = req.body;
+    const { amount, game, gameId, serverId } = req.body;
 
-    if (!amount || !game) {
-      return res.status(400).json({ message: "Amount and game are required" });
-    }
+    const email = req.user.email;
 
-    const reference = `NX_${Date.now()}`;
+    const reference = `NXT_${Date.now()}`;
+
+    // Save pending transaction FIRST
+    await prisma.transaction.create({
+      data: {
+        reference,
+        email,
+        amount,
+        game,
+        gameId,
+        serverId,
+        status: "pending",
+        userId: req.user.id,
+      },
+    });
 
     const response = await axios.post(
       "https://api.paystack.co/transaction/initialize",
       {
-        email: email || "user@noxstore.com",
-        amount: Math.round(amount * 100),
+        email,
+        amount: amount * 100,
         reference,
-        metadata: {
-          game,
-        },
+        callback_url: "https://noxstore-web.onrender.com",
       },
       {
         headers: {
@@ -43,63 +47,48 @@ router.post("/initialize", async (req, res) => {
       }
     );
 
-    return res.json({
-      authorization_url: response.data.data.authorization_url,
-      reference,
-    });
+    res.json(response.data.data);
   } catch (err) {
-    console.log("INIT ERROR:", err.response?.data || err.message);
-
-    return res.status(500).json({
-      message: "Payment initialization failed",
-    });
+    console.error(err.response?.data || err.message);
+    res.status(500).json({ message: "Payment init failed" });
   }
 });
 
-/* ─────────────────────────────────────────────
-   2. PAYSTACK WEBHOOK (REAL PAYMENT CONFIRMATION)
-──────────────────────────────────────────── */
-router.post(
-  "/webhook",
-  express.raw({ type: "application/json" }),
-  async (req, res) => {
-    try {
-      const secret = process.env.PAYSTACK_SECRET_KEY;
+/* =========================
+   VERIFY PAYMENT
+========================= */
+router.post("/verify", auth, async (req, res) => {
+  try {
+    const { reference } = req.body;
 
-      const hash = crypto
-        .createHmac("sha512", secret)
-        .update(req.body)
-        .digest("hex");
-
-      if (hash !== req.headers["x-paystack-signature"]) {
-        return res.status(401).send("Invalid signature");
+    const response = await axios.get(
+      `https://api.paystack.co/transaction/verify/${reference}`,
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`,
+        },
       }
+    );
 
-      const event = JSON.parse(req.body);
+    const data = response.data.data;
 
-      /* ── PAYMENT SUCCESS ── */
-      if (event.event === "charge.success") {
-        const data = event.data;
-
-        await prisma.transaction.create({
-          data: {
-            reference: data.reference,
-            amount: data.amount / 100,
-            email: data.customer.email,
-            game: data.metadata?.game || "Unknown",
-            status: "success",
-          },
-        });
-
-        console.log("Transaction saved:", data.reference);
-      }
-
-      res.sendStatus(200);
-    } catch (err) {
-      console.log("WEBHOOK ERROR:", err.message);
-      res.sendStatus(500);
+    if (data.status !== "success") {
+      return res.status(400).json({ message: "Payment not successful" });
     }
+
+    const updated = await prisma.transaction.update({
+      where: { reference },
+      data: { status: "success" },
+    });
+
+    res.json({
+      success: true,
+      transaction: updated,
+    });
+  } catch (err) {
+    console.error(err.response?.data || err.message);
+    res.status(500).json({ message: "Verify failed" });
   }
-);
+});
 
 module.exports = router;
