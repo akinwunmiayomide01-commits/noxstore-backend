@@ -37,7 +37,7 @@ router.post("/initialize", auth, async (req, res) => {
         email,
         amount: amount * 100,
         reference,
-        callback_url: "https://noxstore-web.onrender.com",
+        callback_url: "https://noxstore-web.onrender.com/index.html?payment=success",
       },
       {
         headers: {
