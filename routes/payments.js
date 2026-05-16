@@ -37,7 +37,7 @@ router.post("/initialize", auth, async (req, res) => {
         email,
         amount: amount * 100,
         reference,
-        callback_url: "http://127.0.0.1:5500/?payment=success",
+        callback_url: `https://noxstore-web.vercel.app/?payment=success`,
       },
       {
         headers: {
